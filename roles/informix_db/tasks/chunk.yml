@@ -1,0 +1,35 @@
+---
+
+- name: "Resolve path of chunk : {{ dbspace.key }}"
+  ansible.builtin.command: "realpath {{ chunk.path }}"
+  register: chunk_path
+  changed_when: false
+
+- name: "Check state of chunk : {{ dbspace.key }}"
+  ansible.builtin.stat:
+    path: "{{ chunk_path.stdout }}"
+  register: chunk_state
+
+- name: "Create cooked file dbspace chunk : {{ dbspace.key }}"
+  ansible.builtin.file:
+    path: "{{ chunk.path }}"
+    owner: informix
+    group: informix
+    mode: "660"
+    state: touch
+  when: chunk_state.stat.ischr is not defined or not chunk_state.stat.ischr
+
+- name: "Add chunk to dbspace : {{ dbspace.key }}"
+  become: true
+  become_user: "{{ informix_db_server_name }}"
+  ansible.builtin.shell: |
+    set -e
+    source {{ informix_env_file_path }}
+    onspaces \
+        -a {{ dbspace.key }} \
+        -p {{ chunk.path }} \
+        -o {{ chunk.offset_in_kb }} \
+        -s {{ chunk.size_in_kb }}
+  args:
+    executable: /bin/bash
+  changed_when: true

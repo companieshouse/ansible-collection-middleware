@@ -1,0 +1,48 @@
+---
+
+- name: Check required variables are set
+  ansible.builtin.assert:
+    that:
+      - informix_db_config is defined and informix_db_config | length > 0
+      - informix_db_config_templates_path is defined and informix_db_config_templates_path | trim | length > 0
+      - informix_db_logs_path is defined and informix_db_logs_path | trim | length > 0
+      - informix_db_server_name is defined and informix_db_server_name | trim | length > 0
+      - informix_db_vault_path is defined and informix_db_vault_path | trim | length > 0
+    msg: "Required variable(s) empty or undefined"
+
+- name: Create Informix logs directory
+  ansible.builtin.file:
+    path: "{{ informix_db_logs_path }}"
+    owner: "{{ informix_db_service_user }}"
+    group: "{{ informix_db_service_group }}"
+    mode: "755"
+    state: directory
+
+- name: Create Informix tape device directory
+  ansible.builtin.file:
+    path: "{{ informix_db_tape_device_path }}"
+    owner: "{{ informix_db_service_user }}"
+    group: "{{ informix_db_service_group }}"
+    mode: "755"
+    state: directory
+
+- name: Create rhosts config file
+  ansible.builtin.template:
+    src: rhosts.j2
+    dest: "/home/{{ informix_db_service_user }}/.rhosts"
+    owner: "{{ informix_db_service_user }}"
+    group: "{{ informix_db_service_group }}"
+    mode: "600"
+
+- name: Configure user groups
+  ansible.builtin.user:
+    name: "{{ informix_db_service_user }}"
+    group: "{{ informix_db_service_group }}"
+    groups: ""
+
+- name: Retrieve Informix configuration from Hashicorp Vault
+  ansible.builtin.set_fact:
+    informix_vault_config: "{{ lookup('community.hashi_vault.hashi_vault', informix_db_vault_path) | default('') }}"
+
+- name: Provision server instance
+  ansible.builtin.include_tasks: server.yml

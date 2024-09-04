@@ -1,0 +1,48 @@
+---
+
+- name: "Check initial chunk configuration is present : {{ dbspace.key }}"
+  ansible.builtin.assert:
+    that:
+      - dbspace.value.initial_chunk is defined
+    msg: "Configuration for dbspace '{{ dbspace.key }}' must include 'initial_chunk' configuration"
+
+- name: "Resolve path of initial dbspace chunk : {{ dbspace.key }}"
+  ansible.builtin.command: "realpath {{ dbspace.value.initial_chunk.path }}"
+  register: initial_chunk_path
+  changed_when: false
+
+- name: "Check state of initial dbspace chunk : {{ dbspace.key }}"
+  ansible.builtin.stat:
+    path: "{{ initial_chunk_path.stdout }}"
+  register: initial_chunk_state
+
+- name: "Create cooked disk initial dbspace chunk : {{ dbspace.key }}"
+  ansible.builtin.file:
+    path: "{{ dbspace.value.initial_chunk.path }}"
+    owner: informix
+    group: informix
+    mode: "660"
+    state: touch
+  when: initial_chunk_state.stat.ischr is not defined or not initial_chunk_state.stat.ischr
+
+- name: "Create dbspace and initial chunk : {{ dbspace.key }}"
+  become: true
+  become_user: "{{ informix_db_server_name }}"
+  ansible.builtin.shell: |
+    set -e
+    source {{ informix_env_file_path }}
+    onspaces -c \
+        -d {{ dbspace.key }} \
+        -p {{ dbspace.value.initial_chunk.path }} \
+        -o {{ dbspace.value.initial_chunk.offset_in_kb }} \
+        -s {{ dbspace.value.initial_chunk.size_in_kb }}"
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+- name: "Provision additional dbspace chunks : {{ dbspace.key }}"
+  ansible.builtin.include_tasks: chunk.yml
+  loop: "{{ dbspace.value.additional_chunks }}"
+  loop_control:
+    loop_var: chunk
+  when: dbspace.value.additional_chunks is defined and dbspace.value.additional_chunks | length > 0
