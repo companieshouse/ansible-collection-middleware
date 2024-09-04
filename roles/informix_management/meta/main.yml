@@ -1,7 +1,7 @@
 galaxy_info:
   role_name: informix_management
   author: Companies House
-  description: Provision management tooling for Informix DB server
+  description: Provision Informix DB management tooling
   license: MIT
   min_ansible_version: 2.15.6
   galaxy_tags:
