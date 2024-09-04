@@ -1,0 +1,71 @@
+# Environment configuration menu system for Informix databases.
+
+function menu () {
+    local highlight_colour="\033[38;5;202m"
+    local reset_color="\033[0m"
+    local informix_env_files_path="{{ informix_management_install_path }}/etc"
+    local informix_env_file_prefix="informix.env"
+
+    menu_items=()
+    while read -r -d $'\0' env_file_path; do
+        local env_file_name=$(basename "${env_file_path}" | tr '[:upper:]' '[:lower:]')
+        local service_name="${env_file_name##*.}"
+        menu_items+=("${service_name}")
+        menu_items+=("Use ${service_name} database environment configuration")
+    done < <(find "${informix_env_files_path}" -name "${informix_env_file_prefix}.*" -print0 2>/dev/null | sort -z)
+
+    if [[ "{{ '${#menu_items[@]}' }}" -eq 0 ]]; then
+        echo "No Informix configuration files found matching '${informix_env_files_path}/${informix_env_file_prefix}.*'" >&2
+        return 1
+    fi
+
+    local cancel_selected="1"
+    local help_button_selected="2"
+    local esc_key_pressed="255"
+    local none_item="None"
+
+    menu_items+=("${none_item}" "No database environment configuration" )
+
+    while true; do
+	    local temp_file=$(mktemp)
+        
+    	exec {file_descriptor}>${temp_file}
+	    dialog --help-button --menu "Informix Configuration" 12 60 21 "${menu_items[@]}" --output-fd ${file_descriptor}
+	    local exit_code="$?"
+	    exec {file_descriptor}>&-
+
+	    exec {file_descriptor}<${temp_file}
+	    read -u ${file_descriptor} menu_selection
+	    exec {file_descriptor}<&-
+
+        rm -f ${temp_file}
+
+        if [[ "${exit_code}" -eq "${cancel_selected}" || "${exit_code}" -eq "${esc_key_pressed}" ]]; then
+            clear
+            return 0
+        elif [[ "${exit_code}" -eq "${help_button_selected}" ]]; then
+            dialog --msgbox "Select an option corresponding to the Informix database that should be configured for the current shell environment. \n\nSelect the '${none_item}' option to not set any environment configuration (or unset any existing configuration) in the current shell environment.\n\nEnvironment configuration files are searched for in the path '${informix_env_files_path}' with names matching '${informix_env_file_prefix}.*'." 20 50
+        elif [[ "${exit_code}" -ne 0 ]]; then
+            echo "Unable to determine menu item selection (${exit_code})" >&2
+            return 1
+        else
+            break
+        fi
+    done
+
+    for env_var in INFORMIXSERVER ONCONFIG INFORMIXSQLHOSTS; do
+        unset "${env_var}"
+    done
+
+    if [[ "${TERM}" =~ "xterm-256color" ]]; then
+        export PS1="[\u@\h \W] (\[\033[38;5;202m\]${menu_selection}\[\033[0m\]) \$ "
+    else
+        export PS1="[\u@\h \W] (${menu_selection}) \$ "
+    fi
+
+    if [[ "${menu_selection}" != "${none_item}" ]]; then
+        source "${informix_env_files_path}/${informix_env_file_prefix}.${menu_selection}"
+    fi
+
+    clear
+}
