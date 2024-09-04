@@ -1,15 +1,9 @@
-dependencies: []
-
 galaxy_info:
   role_name: informix_management
-  namespace: companieshouse
   author: Companies House
-  description: Provision cron jobs and supporting tools for management of Informix databases
+  description: Provision management tooling for Informix DB server
   license: MIT
-  min_ansible_version: 2.9.10
-  platforms:
-    - name: EL
-      versions:
-        - all
+  min_ansible_version: 2.15.6
   galaxy_tags:
     - informix
+  standalone: false

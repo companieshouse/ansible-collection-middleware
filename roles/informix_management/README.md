@@ -80,7 +80,7 @@ collections:
 ## Example Playbook
 
 ```yml
-- name: Provision Informix DB management scripts
+- name: Provision Informix DB management tooling
   hosts: all
   roles:
     - role: companieshouse.middleware.informix_management
