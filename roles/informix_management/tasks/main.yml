@@ -1,0 +1,128 @@
+---
+
+- name: Check template script files path is set when cron jobs are defined
+  ansible.builtin.assert:
+    that:
+      - informix_management_script_templates_path is defined and informix_management_script_templates_path | trim | length > 0
+    msg: "The role variable 'informix_management_script_templates_path' must be set when specifying cron jobs with 'informix_management_cron_jobs'"
+  when: informix_management_cron_jobs is defined and informix_management_cron_jobs | length > 0
+
+- name: Check template script files exist when cron jobs are defined
+  ansible.builtin.assert:
+    that:
+      - "{{ lookup('fileglob', '{{ informix_management_script_templates_path }}/*.j2') | length > 0 }}"
+    msg: >-
+      The directory path set by the role variable 'informix_management_script_templates_path' must contain
+      one or more Jinja2 template script files when specifying cron jobs with 'informix_management_cron_jobs'
+
+- name: Check Hashicorp Vault path is set if alerts enabled
+  ansible.builtin.assert:
+    that:
+      - informix_management_alerts_vault_path is defined and informix_management_alerts_vault_path | trim | length > 0
+    msg: "The role variable 'informix_management_alerts_vault_path' must be set when 'informix_management_alerts_enabled' is true"
+  when: informix_management_alerts_enabled
+
+- name: Check Hashicorp Vault path is set if stats enabled
+  ansible.builtin.assert:
+    that:
+      - informix_management_stats_vault_path is defined and informix_management_stats_vault_path | trim | length > 0
+    msg: "The role variable 'informix_management_stats_vault_path' must be set when 'informix_management_stats_enabled' is true"
+  when: informix_management_stats_enabled
+
+- name: Retrieve alerts config from Hashicorp Vault
+  ansible.builtin.set_fact:
+    informix_management_alerts_config: "{{ lookup('community.hashi_vault.hashi_vault', informix_management_alerts_vault_path) }}"
+  when: informix_management_alerts_enabled
+
+- name: Retrieve stats config from Hashicorp Vault
+  ansible.builtin.set_fact:
+    informix_management_stats_config: "{{ lookup('community.hashi_vault.hashi_vault', informix_management_stats_vault_path) }}"
+  when: informix_management_stats_enabled
+
+- name: Create scripts directory
+  ansible.builtin.file:
+    path: "/home/{{ informix_management_informix_user }}/scripts"
+    owner: "{{ informix_management_informix_user }}"
+    group: "{{ informix_management_informix_group }}"
+    mode: "755"
+    state: directory
+
+- name: "Create Informix management log directories"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "{{ informix_management_informix_user }}"
+    group: "{{ informix_management_informix_group }}"
+    mode: "755"
+    state: directory
+  loop:
+    - "{{ informix_management_logs_path }}"
+    - "{{ informix_management_logs_path }}/common"
+
+- name: Install scripts for cron jobs
+  ansible.builtin.template:
+    src: "{{ item }}"
+    dest: "/home/{{ informix_management_informix_user }}/scripts/{{ item | basename | replace('.j2', '') }}"
+    owner: "{{ informix_management_informix_user }}"
+    group: "{{ informix_management_informix_group }}"
+    mode: "755"
+  with_fileglob:
+    - "{{ informix_management_script_templates_path }}/*.j2"
+  when: informix_management_script_templates_path is defined and informix_management_script_templates_path | length > 0
+
+- name: Create Informix cron jobs
+  ansible.builtin.cron:
+    name: "{{ item.name }}"
+    day: "{{ item.day_of_month }}"
+    weekday: "{{ item.day_of_week }}"
+    minute: "{{ item.minute }}"
+    hour: "{{ item.hour }}"
+    month: "{{ item.month }}"
+    ansible.builtin.user: "{{ informix_management_informix_user }}"
+    job: "/home/{{ informix_management_informix_user }}/scripts/{{ item.script }}"
+    disabled: "{{ item.disabled | default(false) }}"
+  loop: "{{ informix_management_cron_jobs }}"
+  when: informix_management_cron_jobs is defined and informix_management_cron_jobs | length > 0
+
+- name: Configure recipient address for Informix cron jobs
+  community.general.cronvar:
+    name: MAILTO
+    value: root@localhost
+    ansible.builtin.user: "{{ informix_management_informix_user }}"
+
+- name: Install additional tools for Informix cron job scripts # noqa fqcn[action-core]
+  ansible.builtin.yum:
+    name:
+      - bc
+      - dialog
+      - lzip
+      - ncompress
+    state: present
+
+- name: Install interactive menu script
+  ansible.builtin.template:
+    src: menu.j2
+    dest: "/home/{{ informix_management_informix_user }}/scripts/menu"
+    owner: "{{ informix_management_informix_user }}"
+    group: "{{ informix_management_informix_group }}"
+    mode: "755"
+
+- name: Enable interactive menu for Informix user
+  ansible.builtin.blockinfile:
+    marker: "# {mark} ANSIBLE MANAGED MENU BLOCK"
+    path: "/home/{{ informix_management_informix_user }}/.bashrc"
+    block: |
+      # Display interactive menu on login
+      if [[ -f "$HOME/scripts/menu" ]]; then
+          source "$HOME/scripts/menu"
+          menu
+      fi
+
+- name: Add scripts directory to PATH environment variable
+  ansible.builtin.blockinfile:
+    marker: "# {mark} ANSIBLE MANAGED PATH BLOCK"
+    path: "/home/{{ informix_management_informix_user }}/.bashrc"
+    block: |
+      # Add scripts directory to PATH environment variable
+      if [[ -d "$HOME/scripts" ]]; then
+          export PATH="$HOME/scripts:$PATH"
+      fi

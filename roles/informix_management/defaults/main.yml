@@ -1,0 +1,8 @@
+---
+
+informix_management_alerts_enabled: false
+informix_management_informix_group: informix
+informix_management_informix_user: informix
+informix_management_install_path: /opt/informix/14.10
+informix_management_logs_path: /var/log/informix
+informix_management_stats_enabled: false
