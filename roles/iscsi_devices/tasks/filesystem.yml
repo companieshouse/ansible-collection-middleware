@@ -1,0 +1,42 @@
+---
+
+- name: "Generate filesystem UUID for iSCSI device '{{ device.alias }}'"
+  ansible.builtin.set_fact:
+    filesystem_uuid: "{{ device.alias | to_uuid }}"
+
+- name: "Create filesystem for iSCSI device '{{ device.alias }}'"
+  community.general.filesystem:
+    fstype: "{{ device.filesystem.type }}"
+    dev: "/dev/disk/by-id/scsi-{{ iscsi_devices_vault_config[ansible_hostname]['iscsi_device_wwids'][device.alias] }}"
+    opts: "-m uuid={{ filesystem_uuid }}"
+    force: true
+  register: filesystem_created
+
+- name: Create filesystem mount point
+  ansible.builtin.file:
+    path: "{{ device.filesystem.path }}"
+    owner: "{{ device.filesystem.owner }}"
+    group: "{{ device.filesystem.group }}"
+    mode: "{{ device.filesystem.mode }}"
+    state: directory
+
+- name: "Mount filesystem for iSCSI device '{{ device.alias }}'" # noqa no-handler
+  mount:
+    path: "{{ device.filesystem.path }}"
+    src: "UUID={{ filesystem_uuid }}"
+    fstype: "{{ device.filesystem.type }}"
+    opts: "_netdev,x-systemd.requires=iscsi.service"
+    state: mounted
+  when: filesystem_created.changed
+
+- name: Force systemd to reread configs # noqa no-handler
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: filesystem_created.changed
+
+- name: "Set ownership and permissions for iSCSI mount path '{{ device.filesystem.path }}'"
+  ansible.builtin.file:
+    path: "{{ device.filesystem.path }}"
+    owner: "{{ device.filesystem.owner }}"
+    group: "{{ device.filesystem.group }}"
+    mode: "{{ device.filesystem.mode }}"

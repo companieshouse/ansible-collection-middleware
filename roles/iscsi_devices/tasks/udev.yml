@@ -1,0 +1,55 @@
+---
+
+- name: Create udev device management rules for iSCSI devices
+  ansible.builtin.template:
+    src: 60-raw.rules.j2
+    dest: /etc/udev/rules.d/60-raw.rules
+    owner: root
+    group: root
+    mode: '0600'
+    trim_blocks: true
+  vars:
+    devices: "{{ iscsi_devices_config | selectattr('raw_character_device', 'defined') | list }}"
+  notify:
+    - Replay kernel device events
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Check state of raw character device nodes
+  ansible.builtin.stat:
+    path: "{{ device.raw_character_device.path }}"
+  loop: "{{ iscsi_devices_config | selectattr('raw_character_device', 'defined') | list }}"
+  loop_control:
+    loop_var: device
+  register: character_device_nodes
+
+- name: Assert that raw character device nodes were created
+  ansible.builtin.assert:
+    that:
+      - node.stat.exists and node.stat.ischr
+    success_msg: "Character device node was successfully created '{{ node.invocation.module_args.path }}'"
+    fail_msg: "Character device node was not created '{{ node.invocation.module_args.path }}'"
+    quiet: true
+  loop: "{{ character_device_nodes.results }}"
+  loop_control:
+    loop_var: node
+
+- name: Check state of raw character device symbolic links
+  ansible.builtin.stat:
+    path: "/dev/{{ device.alias }}"
+  loop: "{{ iscsi_devices_config | selectattr('raw_character_device', 'defined') | list }}"
+  loop_control:
+    loop_var: device
+  register: character_device_symbolic_links
+
+- name: Assert that raw character device symbolic links were created
+  ansible.builtin.assert:
+    that:
+      - link.stat.exists and link.stat.islnk
+    success_msg: "Symbolic link to character device node was successfully created '{{ link.invocation.module_args.path }}'"
+    fail_msg: "Symbolic link to character device node was not created '{{ link.invocation.module_args.path }}'"
+    quiet: true
+  loop: "{{ character_device_symbolic_links.results }}"
+  loop_control:
+    loop_var: link

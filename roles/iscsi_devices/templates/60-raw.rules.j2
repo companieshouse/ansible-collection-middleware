@@ -1,0 +1,11 @@
+{% for device in devices %}
+{% if device.multipath %}
+ENV{DM_UUID}=="mpath-{{ iscsi_devices_vault_config[ansible_hostname]['iscsi_device_wwids'][device.alias] }}", RUN+="/bin/raw {{ device.raw_character_device.path }} /dev/mapper/{{ device.alias }}"
+{% else %}
+KERNEL=="sd*[!0-9]", ACTION=="add", PROGRAM=="scsi_id -g -u -d %N", RESULT=="{{ iscsi_devices_vault_config[ansible_hostname]['iscsi_device_wwids'][device.alias] }}", RUN+="/usr/bin/raw {{ device.raw_character_device.path }} %N"
+{% endif %}
+KERNEL=="{{ device.raw_character_device.path | basename }}", ACTION=="add", OWNER="{{ device.raw_character_device.owner }}", GROUP="{{ device.raw_character_device.group }}", MODE="0660", SYMLINK+="{{ device.alias }}"
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}

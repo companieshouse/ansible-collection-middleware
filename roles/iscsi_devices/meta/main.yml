@@ -1,0 +1,8 @@
+galaxy_info:
+  author: Companies House
+  description: Provision iSCSI devices
+  license: MIT
+  min_ansible_version: 2.15.6
+  galaxy_tags:
+    - iscsi
+  standalone: false
