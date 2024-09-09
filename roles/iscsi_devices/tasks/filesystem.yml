@@ -21,7 +21,7 @@
     state: directory
 
 - name: "Mount filesystem for iSCSI device '{{ device.alias }}'" # noqa no-handler
-  mount:
+  ansible.posix.mount:
     path: "{{ device.filesystem.path }}"
     src: "UUID={{ filesystem_uuid }}"
     fstype: "{{ device.filesystem.type }}"
