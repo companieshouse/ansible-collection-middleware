@@ -1,0 +1,15 @@
+---
+
+- name: Restart multipath daemon
+  ansible.builtin.systemd:
+    name: multipathd
+    state: restarted
+    enabled: true
+
+- name: Replay kernel device events
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  loop:
+    - udevadm control --reload
+    - udevadm trigger -c add
+  changed_when: true

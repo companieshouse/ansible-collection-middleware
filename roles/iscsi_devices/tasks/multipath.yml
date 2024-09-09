@@ -1,0 +1,17 @@
+---
+
+- name: Create multipath daemon configuration
+  ansible.builtin.template:
+    src: multipath.conf.j2
+    dest: /etc/multipath.conf
+    owner: root
+    group: root
+    mode: '0600'
+    trim_blocks: true
+  vars:
+    multipath_devices: "{{ iscsi_devices_config | selectattr('multipath') | list }}"
+  notify:
+    - Restart multipath daemon
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

@@ -1,0 +1,74 @@
+---
+
+- name: Check for presence of role lock file
+  ansible.builtin.stat:
+    path: "{{ iscsi_devices_role_lock_file_path }}"
+  register: lock_result
+
+- name: Assert that lock file does not exist
+  ansible.builtin.fail:
+    msg: >-
+      The host '{{ ansible_hostname }}' was previously provisioned by this role. There is
+      a risk of data loss when running this role against a previously provisioned host.
+      Refer to the README.md file for this role for more information.
+  when: lock_result.stat.exists
+
+- name: Retrieve iSCSI device config from Hashicorp Vault
+  ansible.builtin.set_fact:
+    iscsi_devices_vault_config: "{{ lookup('community.hashi_vault.hashi_vault', iscsi_devices_vault_path) }}"
+
+- name: Check iSCSI device WWIDs are present in Hashicorp Vault
+  ansible.builtin.assert:
+    that:
+      - iscsi_devices_vault_config[ansible_hostname]['iscsi_device_wwids'][device.alias] is defined
+      - iscsi_devices_vault_config[ansible_hostname]['iscsi_device_wwids'][device.alias] | length > 0
+    msg: "Missing Hashicorp Vault iSCSI device WWID for host '{{ ansible_hostname }}' and device '{{ device.alias }}'"
+  loop: "{{ iscsi_devices_config }}"
+  loop_control:
+    loop_var: device
+
+- name: Check iSCSI device configuration contains filesystem or raw character device setting
+  ansible.builtin.assert:
+    that:
+      - device.filesystem is defined or device.raw_character_device is defined
+    msg: "Each element in list iscsi_devices_config must contain a 'filesystem' or 'raw_character_device' atribute"
+  loop: "{{ iscsi_devices_config }}"
+  loop_control:
+    loop_var: device
+
+- name: Check iSCSI initiator name is present in Hashicorp Vault
+  ansible.builtin.assert:
+    that:
+      - iscsi_devices_vault_config[ansible_hostname]['iscsi_initiator_name'] is defined
+      - iscsi_devices_vault_config[ansible_hostname]['iscsi_initiator_name'] | trim | length > 0
+    msg: "Missing Hashicorp Vault iSCSI initiator name for host '{{ ansible_hostname }}'"
+
+- name: Check iSCSI portal IPs are present in Hashicorp Vault
+  ansible.builtin.assert:
+    that:
+      - iscsi_devices_vault_config[ansible_hostname]['iscsi_portal_ips'] is defined
+      - iscsi_devices_vault_config[ansible_hostname]['iscsi_portal_ips'] | length > 0
+    msg: "Missing Hashicorp Vault iSCSI portal IPs for host '{{ ansible_hostname }}'"
+
+- name: Discover iSCSI devices
+  ansible.builtin.import_tasks: discovery.yml
+
+- name: Provision multipath configuration
+  ansible.builtin.import_tasks: multipath.yml
+
+- name: Provision udev rules
+  ansible.builtin.import_tasks: udev.yml
+
+- name: Provision filesystem(s)
+  ansible.builtin.include_tasks: filesystem.yml
+  loop: "{{ iscsi_devices_config | selectattr('filesystem', 'defined') | list }}"
+  loop_control:
+    loop_var: device
+
+- name: Create role lock file
+  ansible.builtin.copy:
+    content: "{{ ansible_date_time.iso8601 }} : Provisioned by 'ansible-role-iscsi-devices' role\n"
+    dest: "{{ iscsi_devices_role_lock_file_path }}"
+    owner: root
+    group: root
+    mode: '0444'
