@@ -98,13 +98,16 @@
       - ncompress
     state: present
 
-- name: Install interactive menu script
+- name: Install Informix management scripts
   ansible.builtin.template:
     src: menu.j2
-    dest: "/home/{{ informix_management_informix_user }}/scripts/menu"
+    dest: "/home/{{ informix_management_informix_user }}/scripts/{{ item | replace('.j2', '') }}"
     owner: "{{ informix_management_informix_user }}"
     group: "{{ informix_management_informix_group }}"
     mode: "755"
+  loop:
+    - menu.j2
+    - informixctl.j2
 
 - name: Enable interactive menu for Informix user
   ansible.builtin.blockinfile:
