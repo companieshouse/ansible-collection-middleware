@@ -7,8 +7,6 @@
 script_name=$(basename "$0")
 parent_dir="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
-desired_backup_process_count="3"
-
 log_file="{{ informix_management_logs_path }}/common/${script_name}.log"
 
 # -- General ------------------------------------------------------------------
