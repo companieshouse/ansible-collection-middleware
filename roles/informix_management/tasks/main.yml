@@ -51,7 +51,7 @@
     minute: "{{ item.minute }}"
     hour: "{{ item.hour }}"
     month: "{{ item.month }}"
-    ansible.builtin.user: "{{ informix_management_informix_user }}"
+    user: "{{ informix_management_informix_user }}"
     job: "/home/{{ informix_management_informix_user }}/scripts/{{ item.script }}"
     disabled: "{{ item.disabled | default(false) }}"
   loop: "{{ informix_management_cron_jobs }}"
@@ -61,7 +61,7 @@
   community.general.cronvar:
     name: MAILTO
     value: root@localhost
-    ansible.builtin.user: "{{ informix_management_informix_user }}"
+    user: "{{ informix_management_informix_user }}"
 
 - name: Install additional tools for Informix cron job scripts # noqa fqcn[action-core]
   ansible.builtin.yum:
