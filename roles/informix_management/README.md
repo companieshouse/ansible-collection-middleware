@@ -26,16 +26,16 @@ The following role variables are required, however default values may be used wh
 
 | Name                                    | Default    | Description                                            |
 |-----------------------------------------|------------|--------------------------------------------------------|
-| `informix_management_alerts_enabled`    | `false`    | A boolean value representing whether to enable the retrieval of alerts config from Hashicorp Vault. If enabled (i.e. set to `true`), configuration will be retrieved from Hashicorp Vault using the path specified by the `informix_management_alerts_vault_path` variable. This configuration will be stored in a variable named `informix_management_alerts_config` and can be referenced in Jinja2 templates installed from the path specified by the `informix_management_script_templates_path` variable. |
-| `informix_management_alerts_vault_path` |            | The Hashicorp Vault path to read alerts configuration from when `informix_management_alerts_enabled` is true. This information is made accessible to Jinja2 template scripts installed from the `informix_management_script_templates_path` path, using the template variable `informix_management_alerts_config`. |
+| `informix_management_alerts_enabled`    | `false`    | A boolean value representing whether to enable the retrieval of alerts configuration from Hashicorp Vault. If enabled (i.e. set to `true`), configuration will be retrieved from Hashicorp Vault using the path specified by the `informix_management_alerts_vault_path` variable. This configuration will be stored in a variable named `informix_management_alerts_config` and can be referenced in Jinja2 templates. |
+| `informix_management_alerts_vault_path` |            | The Hashicorp Vault path to read alerts configuration from when `informix_management_alerts_enabled` is true. This configuration is made accessible to Jinja2 template scripts installed from the `informix_management_script_templates_path` path via the template variable `informix_management_alerts_config`. |
 | `informix_management_cron_jobs`         |            | See [Informix Cron Jobs][2] for more information.      |
 | `informix_management_informix_group`    | `informix` | The group to be used for ownership of script files, directories, and cron jobs. |
 | `informix_management_informix_user`     | `informix` | The user to be used for ownership of script files and directories. |
 | `informix_management_install_path`      | `/opt/informix/14.10` | The path to the Informix installation directory. |
 | `informix_management_logs_path`         | `/var/log/informix` | The path to a directory which will be created for storing the output of cron job scripts. |
-| `informix_management_script_templates_path` |            | A path to a directory containing one or more [Jinja2](https://jinja.palletsprojects.com/en/2.10.x/) format template script files. These scripts will be installed to `/home/{{ informix_management_informix_user }}/scripts/` and can be executed as cron jobs. See [Informix Cron Jobs][2] for more information. |
-| `informix_management_stats_enabled`     | `false`    | A boolean value representing whether to enable the retrieval of stats config from Hashicorp Vault. If enabled (i.e. set to `true`), configuration will be retrieved from Hashicorp Vault using the path specified by the `informix_management_stats_vault_path` variable. This configuration will be stored in a variable named `informix_management_stats_config` and can be referenced in Jinja2 templates installed from the path specified by the `informix_management_script_templates_path` variable. |
-| `informix_management_stats_vault_path`  |            | The Hashicorp Vault path to read stats configuration from when `informix_management_stats_enabled` is true. This information is made accessible to Jinja2 template scripts installed from the `informix_management_script_templates_path` path, using the template variable `informix_management_stats_config`. |
+| `informix_management_script_templates_path` |            | A path to a directory containing zero or more [Jinja2](https://jinja.palletsprojects.com/en/2.10.x/) format template script files. These scripts will be installed to `/home/{{ informix_management_informix_user }}/scripts/` and can be executed as cron jobs. See [Informix Cron Jobs][2] for more information. In addition, several common Informix DB management scripts are installed in the same location (see [Common Management Scripts][4]). |
+| `informix_management_stats_enabled`     | `false`    | A boolean value representing whether to enable the retrieval of stats configuration from Hashicorp Vault. If enabled (i.e. set to `true`), configuration will be retrieved from Hashicorp Vault using the path specified by the `informix_management_stats_vault_path` variable. This configuration will be stored in a variable named `informix_management_stats_config` and can be referenced in Jinja2 templates. |
+| `informix_management_stats_vault_path`  |            | The Hashicorp Vault path to read stats configuration from when `informix_management_stats_enabled` is true. This information is made accessible to Jinja2 template scripts installed from the `informix_management_script_templates_path` path via the template variable `informix_management_stats_config`. |
 
 ### Informix Cron Jobs
 
@@ -71,10 +71,7 @@ An interactive shell function named `menu` will be installed by this role, and t
 
 # Common Management Scripts
 
-This role deploys a number of common management scripts for regular Informix DB maintenance tasks in addition to those scripts provided by the `informix_management_script_templates_path` role variable.
-
-> [!NOTE]
-> To avoid clashes, scripts provided using the `informix_management_script_templates_path` role variable should not be given the same name as any of the common management scripts discussed here.
+This role deploys a number of common management scripts for regular Informix DB maintenance tasks in addition to those scripts provided by the `informix_management_script_templates_path` role variable:
 
 | Filename                      | Description                                                                                                         |
 |-------------------------------|---------------------------------------------------------------------------------------------------------------------|
@@ -85,8 +82,10 @@ This role deploys a number of common management scripts for regular Informix DB 
 | `stop_all_logicals.j2`        | Stop all logical log continuous backup processes.                                                                   |
 | `update_statistics.j2`        | Generate and update database statistics regarding table, row, and page-count in the systables system catalog table. |
 
-All scripts are installed in the directory path `/home/{{ informix_management_informix_user }}/scripts/`.
+> [!WARNING]
+> To avoid clashes, scripts provided using the `informix_management_script_templates_path` role variable should not be given the same name as any of the common management scripts listed above.
 
+All scripts are installed to the directory path `/home/{{ informix_management_informix_user }}/scripts/`.
 
 ## Example Requirements File
 
