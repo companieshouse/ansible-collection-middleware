@@ -1,6 +1,6 @@
 # Ansible Role: Informix Management
 
-An [Ansible Galaxy](https://galaxy.ansible.com/) role for deployment management scripts, configuring cron jobs, and adding an interactive menu for working with Informix databases at the command-line.
+An [Ansible Galaxy](https://galaxy.ansible.com/) role for provisioning management scripts, cron jobs, and an interactive menu system for working with Informix databases at the command-line.
 
 ## Table of contents
 
