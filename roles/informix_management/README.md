@@ -7,16 +7,18 @@ An [Ansible Galaxy](https://galaxy.ansible.com/) role for configuring cron jobs 
 * [Role Variables][1]
     * [Informix Cron Jobs][2]
 * [Interactive Menu][3]
-* [Example Requirements File][4]
-* [Example Playbook][5]
-* [License][6]
+* [Common Management Scripts][4]
+* [Example Requirements File][5]
+* [Example Playbook][6]
+* [License][7]
 
 [1]: #role-variables
 [2]: #informix-cron-jobs
 [3]: #interactive-menu
-[4]: #example-requirements-file
-[5]: #example-playbook
-[6]: #license
+[4]: #common-management-scripts
+[5]: #example-requirements-file
+[6]: #example-playbook
+[7]: #license
 
 ## Role Variables
 
@@ -66,6 +68,25 @@ informix_management_cron_jobs:
 ## Interactive Menu
 
 An interactive shell function named `menu` will be installed by this role, and the `.bash_profile` configuration file for the user specified by the `informix_management_informix_user` variable will be updated to automatically execute this function when a new shell is created. The menu presented to the user will include an option for each database server configuration on the host, and when an option is selected the current shell will be configured for that specific database server. This is intended for use with tools like `dbaccess`, which require configuration to be present in the environment. The menu can be invoked again at any time by running the `menu` function on the command-line, and will reconfigure the current shell for the database server selected by the user.
+
+# Common Management Scripts
+
+This role deploys a number of common management scripts for regular Informix DB maintenance tasks in addition to those scripts provided by the `informix_management_script_templates_path` role variable.
+
+> [!NOTE]
+> To avoid clashes, scripts provided using the `informix_management_script_templates_path` role variable should not be given the same name as any of the common management scripts discussed here.
+
+| Filename                      | Description                                                                                                         |
+|-------------------------------|---------------------------------------------------------------------------------------------------------------------|
+| `check_continuous_backups.j2` | Check for the presence of continuous logical log backup processes and generate email alerts if neccessary.          |
+| `level_zero_backup.j2`        | Perform a level zero database backup and archive the level zero backup file.                                        |
+| `logging.j2`                  | Common logging functions for use in other scripts.                                                                  |
+| `logical_log_archive.j2`      | Perform logical log backup and restart continuous backups for the specified Informix database.                      |
+| `stop_all_logicals.j2`        | Stop all logical log continuous backup processes.                                                                   |
+| `update_statistics.j2`        | Generate and update database statistics regarding table, row, and page-count in the systables system catalog table. |
+
+All scripts are installed in the directory path `/home/{{ informix_management_informix_user }}/scripts/`.
+
 
 ## Example Requirements File
 

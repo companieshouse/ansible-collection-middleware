@@ -1,0 +1,142 @@
+#!/bin/bash
+
+# Generate and update database statistics regarding table, row, and page-count
+# in the systables system catalog table.
+
+# -- Internal variables -------------------------------------------------------
+
+script_name=$(basename "$0")
+parent_dir="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
+
+informix_env_files_dir="{{ informix_management_install_path }}/etc"
+informix_env_file_prefix="informix.env"
+
+# -- General ------------------------------------------------------------------
+
+check_service () {
+    local service="${1}"
+
+    if [[ ! "${service}" =~ ^(prod|scud|ef)$ ]]; then
+        echo "Unknown service '${service}'; valid options are: prod scud ef" >&2
+        exit 1
+    fi
+}
+
+unset_informix_env_vars () {
+    for env_var in INFORMIXSERVER INFORMIXDIR ONCONFIG INFORMIXSQLHOSTS; do
+        unset "${env_var}"
+    done
+}
+
+check_informix_env_vars () {
+    local missing_env_vars=()
+
+    for env_var in INFORMIXSERVER INFORMIXDIR ONCONFIG INFORMIXSQLHOSTS; do
+        if [[ -z "${!env_var}" ]]; then
+            missing_env_vars+=("${env_var}")
+        fi
+    done
+
+    if [[ "{{ '${#missing_env_vars[@]}' }}" -gt 0 ]]; then
+        for env_var in "${missing_env_vars[@]}"; do
+            error "Missing environment variable '${env_var}'"
+        done
+
+        error "Aborting"
+        exit 1
+    fi
+}
+
+check_informix_config () {
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
+
+    if [[ ! -f "${env_file_path}" ]]; then
+        error "No configuration file at '${env_file_path}'"
+        exit 1
+    fi
+}
+
+source_informix_config () {
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
+
+    source "${env_file_path}"
+    if [[ $? -ne 0 ]]; then
+        error "Unable to load Informix database configuration from '${env_file_path}'"
+        exit 1
+    fi
+}
+
+set_database_name () {
+    case "${service}" in
+        'prod')
+            database="prod"
+            ;;
+        'scud')
+            database="scud"
+            ;;
+        'ef')
+            database="ef_db"
+            ;;
+        *)
+            error "No database name mapping for service ${service}"
+            exit 1
+            ;;
+    esac
+}
+
+update_database_statistics () {
+    info "Starting ${database} database update"
+
+    dbaccess "${database}" - >/dev/null 2>&1 <<EOF
+update statistics high
+EOF
+    exit_on_error "$?" "dbaccess returned $? (${FUNCNAME[0]}:${LINENO})"
+
+    info "Finished ${database} database update"
+}
+
+load_logging_functions () {
+    source "${parent_dir}/logging"
+    if [[ $? -ne 0 ]]; then
+        echo "${script_name}: Unable to source logging functions into environment" >&2
+        exit 1
+    fi
+
+    initialise_logging
+}
+
+exit_on_error () {
+    local exit_code="${1}"
+    local message="${2}"
+    if [[ "${exit_code}" -ne 0 ]]; then
+        error "${message}"
+        exit "${exit_code}"
+    fi
+}
+
+# -- Entrypoint ---------------------------------------------------------------
+
+main () {
+    local service="${1}"
+
+    if [[ -z "${service}" ]]; then
+        echo "Usage: ${script_name} <service-name>" >&2
+        exit 1
+    fi
+
+    check_service "${service}"
+
+    load_logging_functions
+    
+    log_file="{{ informix_management_logs_path }}/${service}/${script_name}.log"
+
+    check_informix_config
+    unset_informix_env_vars
+    source_informix_config
+    check_informix_env_vars
+
+    set_database_name
+    update_database_statistics
+}
+
+main "${@}"

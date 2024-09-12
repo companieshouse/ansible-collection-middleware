@@ -1,0 +1,227 @@
+#!/bin/bash
+
+# Perform a level zero database backup and archive the level zero backup file.
+#
+# Specify the service name as an argument to this script when executed (i.e. prod,
+# scud, or ef).
+
+# -- Internal variables -------------------------------------------------------
+
+script_name=$(basename "$0")
+parent_dir="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
+
+informix_env_files_dir="{{ informix_management_install_path }}/etc"
+informix_env_file_prefix="informix.env"
+
+informix_level_zero_backups_dir="/db_dump"
+informix_level_zero_backups_archive_dir="/db_dump/xdump"
+
+max_archived_level_zero_backup_days="4"
+
+today=$(date +%d%m%y)
+yesterday=$(date --date=yesterday +%d%m%y)
+
+# -- General ------------------------------------------------------------------
+
+check_service () {
+    local service="${1}"
+
+    if [[ ! "${service}" =~ ^(prod|scud|ef)$ ]]; then
+        echo "Unknown service '${service}'; valid options are: prod scud ef" >&2
+        exit 1
+    fi
+}
+
+unset_informix_env_vars () {
+    for env_var in INFORMIXSERVER INFORMIXDIR ONCONFIG INFORMIXSQLHOSTS; do
+        unset "${env_var}"
+    done
+}
+
+check_informix_env_vars () {
+    local missing_env_vars=()
+
+    for env_var in INFORMIXSERVER INFORMIXDIR ONCONFIG INFORMIXSQLHOSTS; do
+        if [[ -z "${!env_var}" ]]; then
+            missing_env_vars+=("${env_var}")
+        fi
+    done
+
+    if [[ "{{ '${#missing_env_vars[@]}' }}" -gt 0 ]]; then
+        for env_var in "${missing_env_vars[@]}"; do
+            error "Missing environment variable '${env_var}'"
+        done
+
+        error "Aborting"
+        send_alert
+        exit 1
+    fi
+}
+
+check_informix_config () {
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
+
+    if [[ ! -f "${env_file_path}" ]]; then
+        error "No configuration file at '${env_file_path}'"
+        send_alert
+        exit 1
+    fi
+}
+
+source_informix_config () {
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
+
+    source "${env_file_path}"
+    exit_on_error "$?" "Unable to load Informix database configuration from '${env_file_path}'"
+}
+
+load_logging_functions () {
+    source "${parent_dir}/logging"
+    if [[ $? -ne 0 ]]; then
+        echo "${script_name}: Unable to source logging functions into environment" >&2
+        send_alert
+        exit 1
+    fi
+
+    initialise_logging
+}
+
+check_level_zero_backups_dir () {
+    if [[ ! -d "${informix_level_zero_backups_dir}" ]]; then
+        error "Level zero backups directory does not exist: '${informix_level_zero_backups_dir}'"
+        send_alert
+        exit 1
+    fi
+}
+
+check_level_zero_backups_archive_dir () {
+    if [[ ! -d "${informix_level_zero_backups_archive_dir}" ]]; then
+        error "Level zero backups archive directory does not exist: '${informix_level_zero_backups_archive_dir}'"
+        send_alert
+        exit 1
+    fi
+}
+
+check_level_zero_backup_file () {
+    local level_zero_backup_file_path="${1}"
+    if [[ ! -f "${level_zero_backup_file_path}" ]]; then
+        info "Level zero backup file does not exist: '${level_zero_backup_file_path}'"
+        touch "${level_zero_backup_file_path}" >/dev/null 2>&1
+        chmod 660 "${level_zero_backup_file_path}" >/dev/null 2>&1
+        if [[ ! -f "${level_zero_backup_file_path}" ]]; then
+            error "Unable to create empty level zero backup file with 660 permissions at '${level_zero_backup_file_path}'"
+            send_alert
+            exit 1
+        fi
+        info "Created empty level zero backup file: '${level_zero_backup_file_path}'"
+    fi
+}
+
+start_level_zero_backup () {
+    info "Starting level zero backup for '${service}' database"
+    
+    local tape_device=$(grep "^TAPEDEV" ${INFORMIXDIR}/etc/${ONCONFIG} | awk '{ print $2; }')
+    if [[ -z "${tape_device}" ]]; then
+        error "Unable to determine tape device path (TAPEDEV)"
+        send_alert
+        exit 1
+    fi
+
+    if [[ "${tape_device}" != "${current_level_zero_backup}" ]]; then
+        error "Tape device path (TAPEDEV) does not match expected path '${current_level_zero_backup}'"
+        exit
+    fi
+
+    trace "Informix tape device path: '${tape_device}'"
+
+    ontape -s -L 0 <<< "$(echo -ne '\n')" >> "${log_file}" 2>&1
+
+    if [[ ! -s "${current_level_zero_backup}" ]]; then
+        error "Level zero backup file for '${service}' database is empty: '${current_level_zero_backup}'"
+        send_alert
+        exit 1
+    fi
+
+    info "Starting archival of level zero backup file"
+
+    mv "${current_level_zero_backup}" "${archived_level_zero_backup}"
+    exit_on_error "$?" "Unable to archive level zero backup file from '${current_level_zero_backup}' to '${archived_level_zero_backup}'"
+
+    info "Archived level zero backup file from '${current_level_zero_backup}' to '${archived_level_zero_backup}'"
+
+    info "Compressing level zero backup file '${archived_level_zero_backup}'"
+
+    compress -f "${archived_level_zero_backup}"
+    exit_on_error "$?" "Unable to compress archived level zero backup file at '${archived_level_zero_backup}'"
+
+    info "Finished level zero backup for '${service}' database"
+}
+
+cleanup_archived_level_zero_backups () {
+    info "Deleting archived level zero backups older than ${max_archived_level_zero_backup_days} days"
+    find "${informix_level_zero_backups_archive_dir}" -maxdepth 1 -type f -name "${service}level0.*" -mtime +"${max_archived_level_zero_backup_days}" -delete -print >> "${log_file}"
+}
+
+exit_on_error () {
+    local exit_code="${1}"
+    local message="${2}"
+    if [[ "${exit_code}" -ne 0 ]]; then
+        error "${message}"
+        send_alert
+        exit "${exit_code}"
+    fi
+}
+
+# -- Alerts -------------------------------------------------------------------
+
+send_alert () {
+{% if informix_management_alerts_enabled %}
+    local error_message="Level zero backup failed; check log file at '${log_file}'"
+    mailx -s "${USER}@$(hostname) - WARNING - Level zero backup failure" {% for recipient in informix_management_alerts_config.level_zero_backup %}{{ recipient }} {% endfor %}<<< "${error_message}"
+{% else %}
+    echo "Alerts disabled; no mail message(s) will be generated"
+{% endif %}
+}
+
+# -- Entrypoint ---------------------------------------------------------------
+
+main () {
+    local service="${1}"
+
+    if [[ -z "${service}" ]]; then
+        echo "Usage: ${script_name} <service-name>" >&2
+        exit 1
+    fi
+
+    check_service "${service}"
+
+    load_logging_functions
+
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
+
+    check_informix_config
+    unset_informix_env_vars
+    info "Loading configuration file for specified service '${service}' at '${env_file_path}'"
+    source_informix_config
+    check_informix_env_vars
+
+    log_file="{{ informix_management_logs_path }}/${service}/${script_name}.log"
+
+    current_level_zero_backup="${informix_level_zero_backups_dir}/${service}level0.log"
+    archived_level_zero_backup="${informix_level_zero_backups_archive_dir}/${service}level0.${yesterday}"
+
+    trace "Service name: '${service}'"
+    trace "Log file: '${log_file}'"
+    trace "Informix level zero backup: '${current_level_zero_backup}'"
+    trace "Informix level zero backup archive: '${archived_level_zero_backup}'"
+
+    check_level_zero_backups_dir
+    check_level_zero_backups_archive_dir
+    check_level_zero_backup_file "${current_level_zero_backup}"
+
+    start_level_zero_backup
+
+    cleanup_archived_level_zero_backups
+}
+
+main "${@}"

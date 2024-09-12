@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# Stop all logical log continuous backup processes.
+
+# -- Internal variables -------------------------------------------------------
+
+script_name=$(basename "$0")
+parent_dir="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
+
+kill_signal="SIGTERM"
+
+log_file="{{ informix_management_logs_path }}/common/${script_name}.log"
+
+# -- General ------------------------------------------------------------------
+
+terminate_continuous_backup_processes () {
+    local pids_matching_pattern="0"
+    local pids_sent_signal="0"
+
+    for pid in $(pgrep -f 'ontape -c'); do
+        info "Killing process ${pid}"
+
+        (( pids_matching_pattern += 1))
+
+        kill -s "${kill_signal}" "${pid}"
+        local exit_code="$?"
+        if [[ "${exit_code}" -ne 0 ]]; then
+            error "Unable to terminate process '${pid}' with signal '${kill_signal}'"
+            trace "Exit code from 'kill' is ${exit_code}"
+        else
+            (( pids_sent_signal += 1))
+        fi
+    done
+
+    if [[ "${pids_matching_pattern}" -eq 0 ]]; then
+        info "No logical log backup processes were found"
+    else
+        info "Sent '${kill_signal}' signal to ${pids_sent_signal}/${pids_matching_pattern} processes"
+    fi
+}
+
+load_logging_functions () {
+    source "${parent_dir}/logging"
+    if [[ $? -ne 0 ]]; then
+        echo "${script_name}: Unable to source logging functions into environment" >&2
+        exit 1
+    fi
+
+    initialise_logging
+}
+
+# -- Entrypoint ---------------------------------------------------------------
+
+main () {
+    load_logging_functions
+
+    if [[ -t 0 ]]; then
+        read -rp "Stop logical log backups for all Informix databases [y/n]?: " response
+        case "${response:0:1}" in
+            [^Yy])
+                echo "Aborted"
+                exit 0
+                ;;
+        esac
+    fi
+    
+    info "Starting logical log backup termination"
+    terminate_continuous_backup_processes
+    info "Finished logical log backup termination"
+}
+
+main "${@}"
+

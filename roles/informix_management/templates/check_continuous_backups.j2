@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# Check continuous logical log backup processes and send alerts by email if neccessary.
+
+# -- Internal variables -------------------------------------------------------
+
+script_name=$(basename "$0")
+parent_dir="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
+
+desired_backup_process_count="3"
+
+log_file="{{ informix_management_logs_path }}/common/${script_name}.log"
+
+# -- General ------------------------------------------------------------------
+
+check_continuous_backup_processes () {
+    continuous_backup_process_count="$(pgrep -f -c 'ontape -c')"
+
+    if [[ "${continuous_backup_process_count}" != "${desired_backup_process_count}" ]]; then
+        error "Found '${continuous_backup_process_count}' continuous logical log backup processes but expected '${desired_backup_process_count}' processes"
+        send_alert
+        exit 1
+    fi
+}
+
+load_logging_functions () {
+    source "${parent_dir}/logging"
+    if [[ $? -ne 0 ]]; then
+        echo "${script_name}: Unable to source logging functions into environment" >&2
+        exit 1
+    fi
+
+    initialise_logging
+}
+
+check_desired_backup_process_count () {
+    if [[ ! "${desired_backup_process_count}" =~ [0-9]+ ]]; then
+        echo "Unknown desired backup process count '${desired_backup_process_count}'; specify a numeric value" >&2
+        exit 1
+    fi
+}
+
+# -- Alerts -------------------------------------------------------------------
+
+send_alert () {
+{% if informix_management_alerts_enabled %}
+    local error_message="Only '${continuous_backup_process_count}' of '${desired_backup_process_count}' continuous logical log backup processes are running. Please investigate."
+    mailx -s "${USER}@$(hostname) - WARNING - Continuous logical log backup processes" {% for recipient in informix_management_alerts_config.check_continuous_backups %}{{ recipient }} {% endfor %}<<< "${error_message}"
+{% else %}
+    echo "Alerts disabled; no mail message(s) will be generated"
+{% endif %}
+}
+# -- Entrypoint ---------------------------------------------------------------
+
+main () {
+    desired_backup_process_count="${1}"
+
+    if [[ -z "${desired_backup_process_count}" ]]; then
+        echo "Usage: ${script_name} <desired-backup-process-count>" >&2
+        exit 1
+    fi
+
+    check_desired_backup_process_count
+
+    load_logging_functions
+    
+    info "Starting continuous logical log backup processes check"
+    check_continuous_backup_processes
+    info "Finished continuous logical log backup processes check"
+}
+
+main "${@}"

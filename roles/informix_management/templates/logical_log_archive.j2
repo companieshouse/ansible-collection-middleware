@@ -1,0 +1,246 @@
+#!/bin/bash
+
+# Perform logical log backup and restart continuous backups for the specified
+# Informix database.
+#
+# This script assumes that no continuous logical log backups are running for 
+# the specified database and will terminate early if there are active backups
+# (i.e. 'ontape -c' processes). The stop_all_logicals script should be used to
+# terminate all continuous backup processes on the host *before* this script
+# is called.
+#
+# Specify the service name as an argument to this script when executed (i.e. prod,
+# scud, or ef).
+
+# -- Internal variables -------------------------------------------------------
+
+script_name=$(basename "$0")
+parent_dir="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
+
+informix_env_files_dir="{{ informix_management_install_path }}/etc"
+informix_env_file_prefix="informix.env"
+
+informix_logical_logs_dir="/db_dump"
+informix_logical_logs_archive_dir="/db_dump/xdump"
+informix_continuous_backup_delay_seconds="5"
+
+max_archived_logical_log_days="4"
+
+today=$(date +%d%m%y)
+yesterday=$(date --date=yesterday +%d%m%y)
+
+# -- General ------------------------------------------------------------------
+
+check_service () {
+    local service="${1}"
+
+    if [[ ! "${service}" =~ ^(prod|scud|ef)$ ]]; then
+        echo "Unknown service '${service}'; valid options are: prod scud ef" >&2
+        exit 1
+    fi
+}
+
+unset_informix_env_vars () {
+    for env_var in INFORMIXSERVER INFORMIXDIR ONCONFIG INFORMIXSQLHOSTS; do
+        unset "${env_var}"
+    done
+}
+
+check_informix_env_vars () {
+    local missing_env_vars=()
+
+    for env_var in INFORMIXSERVER INFORMIXDIR ONCONFIG INFORMIXSQLHOSTS; do
+        if [[ -z "${!env_var}" ]]; then
+            missing_env_vars+=("${env_var}")
+        fi
+    done
+
+    if [[ "{{ '${#missing_env_vars[@]}' }}" -gt 0 ]]; then
+        for env_var in "${missing_env_vars[@]}"; do
+            error "Missing environment variable '${env_var}'"
+        done
+
+        exit_with_error "Aborting due to missing environment variables"
+    fi
+}
+
+check_informix_config () {
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
+
+    if [[ ! -f "${env_file_path}" ]]; then
+        exit_with_error "No configuration file at '${env_file_path}'"
+    fi
+}
+
+source_informix_config () {
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
+
+    source "${env_file_path}"
+    if [[ $? -ne 0 ]]; then
+        exit_with_error "Unable to load Informix database configuration from '${env_file_path}'"
+    fi
+}
+
+load_logging_functions () {
+    source "${parent_dir}/logging"
+    if [[ $? -ne 0 ]]; then
+        echo "${script_name}: Unable to source logging functions into environment" >&2
+        send_alert
+        exit 1
+    fi
+
+    initialise_logging
+}
+
+check_logical_logs_dir () {
+    if [[ ! -d "${informix_logical_logs_dir}" ]]; then
+        exit_with_error "Logical logs directory does not exist: '${informix_logical_logs_dir}'"
+    fi
+}
+
+check_logical_logs_archive_dir () {
+    if [[ ! -d "${informix_logical_logs_archive_dir}" ]]; then
+        exit_with_error "Logical logs archive directory does not exist: '${informix_logical_logs_archive_dir}'"
+    fi
+}
+
+check_current_logical_log_file () {
+    if [[ ! -f "${current_logical_log}" ]]; then
+        info "Logical log file does not exist: '${current_logical_log}'"
+        touch "${current_logical_log}" >/dev/null 2>&1
+        exit_on_error "$?" "Unable to create empty logical log file at '${current_logical_log}'"
+
+        chmod 660 "${current_logical_log}" >/dev/null 2>&1
+        exit_on_error "$?" "Unable to set 660 permissions on logical log file at '${current_logical_log}'"
+
+        info "Created empty logical log file: '${current_logical_log}'"
+    fi
+}
+
+check_archived_logical_log_file () {
+    if [[ -f "${archived_logical_log}" ]]; then
+        info "Deleting existing logical log archive file '${archived_logical_log}'"
+        rm -f "${archived_logical_log}" >/dev/null 2>&1
+        exit_on_error "$?" "Unable to remove existing logical log archive file '${archived_logical_log}'"
+    fi
+}
+
+archive_logical_log_file () {
+    info "Starting archival of logical log file"
+
+    cp "${current_logical_log}" "${archived_logical_log}" >/dev/null 2>&1
+    exit_on_error "$?" "Unable to archive logical log file from '${current_logical_log}' to '${archived_logical_log}'"
+    info "Archived logical log file from '${current_logical_log}' to '${archived_logical_log}'"
+
+    > "${current_logical_log}"
+    info "Truncated logical log file '${current_logical_log}'"
+
+    info "Finished archival of logical log file"
+}
+
+start_continuous_logical_log_backup () {
+    info "Starting continuous logical log backup for '${service}' database"
+
+    local logical_tape_device=$(grep "^LTAPEDEV" ${INFORMIXDIR}/etc/${ONCONFIG} | awk '{ print $2; }')
+    if [[ -z "${logical_tape_device}" ]]; then
+        exit_with_error "Unable to determine logical tape device path (LTAPEDEV)"
+    fi
+
+    if [[ "${logical_tape_device}" != "${current_logical_log}" ]]; then
+        exit_with_error "Logical tape device path (LTAPEDEV) does not match expected path '${current_logical_log}'"
+    fi
+
+    trace "Informix logical tape device path: '${logical_tape_device}'"
+
+    ontape -c <<< "$(echo -ne '\n')" >/dev/null 2>&1 &
+
+    local continuous_backup_pid="$!"
+
+    sleep "${informix_continuous_backup_delay_seconds}"
+
+    if ! ps -p "${continuous_backup_pid}" >/dev/null 2>&1; then
+        exit_with_error "Continuous logical log backup process (${continuous_backup_pid}) terminated early"
+    fi
+
+    trace "Continuous logical log backup PID: ${continuous_backup_pid}"
+
+    info "Continuous logical log backup for '${service}' database is running"
+}
+
+cleanup_archived_logical_logs () {
+    info "Deleting archived logical logs older than ${max_archived_logical_log_days} days"
+    find "${informix_logical_logs_archive_dir}" -maxdepth 1 -type f -name "${service}logical.*" -mtime +"${max_archived_logical_log_days}" -delete -print >> "${log_file}"
+}
+
+exit_on_error () {
+    local exit_code="${1}"
+    local message="${2}"
+    if [[ "${exit_code}" -ne 0 ]]; then
+        error "${message}"
+        send_alert
+        exit "${exit_code}"
+    fi
+}
+
+exit_with_error () {
+    local message="${1}"
+    local exit_code="255"
+    exit_on_error "${exit_code}" "${message}"
+}
+
+# -- Alerts -------------------------------------------------------------------
+
+send_alert () {
+{% if informix_management_alerts_enabled %}
+    local error_message="Logical log archive failed; check log file at '${log_file}'"
+    mailx -s "${USER}@$(hostname) - WARNING - Logical log archive failure" {% for recipient in informix_management_alerts_config.logical_log_archive %}{{ recipient }} {% endfor %}<<< "${error_message}"
+{% else %}
+    echo "Alerts disabled; no mail message(s) will be generated"
+{% endif %}
+}
+
+# -- Entrypoint ---------------------------------------------------------------
+
+main () {
+    local service="${1}"
+
+    if [[ -z "${service}" ]]; then
+        echo "Usage: ${script_name} <service-name>" >&2
+        exit 1
+    fi
+
+    check_service "${service}"
+
+    load_logging_functions
+
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
+
+    check_informix_config
+    unset_informix_env_vars
+    info "Loading configuration file for specified service '${service}' at '${env_file_path}'"
+    source_informix_config
+    check_informix_env_vars
+
+    log_file="{{ informix_management_logs_path }}/${service}/${script_name}.log"
+
+    current_logical_log="${informix_logical_logs_dir}/${service}logical.log"
+    archived_logical_log="${informix_logical_logs_archive_dir}/${service}logical.${yesterday}"
+
+    trace "Service name: '${service}'"
+    trace "Log file: '${log_file}'"
+    trace "Informix logical log: '${current_logical_log}'"
+    trace "Informix logical log archive: '${archived_logical_log}'"
+
+    check_logical_logs_dir
+    check_logical_logs_archive_dir
+    check_current_logical_log_file
+    check_archived_logical_log_file
+
+    archive_logical_log_file
+
+    start_continuous_logical_log_backup
+
+    cleanup_archived_logical_logs
+}
+
+main "${@}"

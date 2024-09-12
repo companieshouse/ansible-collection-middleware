@@ -1,0 +1,35 @@
+# Common logging functions; log_file variable should be defined in scripts that use these
+# functions and the LOGLEVEL environment variable can optionally be set to control the
+# verbosity of output written to the log file and stdout stream.
+
+log () {
+    local level="${1}"
+    local message="$(echo -e ${2})"
+
+    if [[ -n "${log_file}" ]]; then
+        echo -e "$(date --iso-8601=seconds) ${level} : ${message}" | tee -a "${log_file}"
+    else
+        echo -e "${message}"
+    fi
+}
+
+trace () {
+    local message="${1}"
+    if [[ "${log_level}" == "trace" ]]; then
+        log "TRACE" "${message}"
+    fi
+}
+
+error () {
+    local message="${1}"
+    log "ERROR" "${message}"
+}
+
+info () {
+    local message="${1}"
+    log "INFO" "${message}"
+}
+
+initialise_logging () {
+    log_level=$(echo "${LOGLEVEL:-INFO}" | tr '[:upper:]' '[:lower:]')
+}
