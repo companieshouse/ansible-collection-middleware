@@ -40,7 +40,7 @@ discover_services () {
         local env_file_name=$(basename "${env_file_path}" | tr '[:upper:]' '[:lower:]')
         local service_name="${env_file_name##*.}"
         services+=("${service_name}")
-    done < <(find "${informix_env_files_path}" -name "${informix_env_file_prefix}.*" -print0 2>/dev/null | sort -z)
+    done < <(find "${informix_env_files_dir}" -name "${informix_env_file_prefix}.*" -print0 2>/dev/null | sort -z)
 }
 
 unset_informix_env_vars () {

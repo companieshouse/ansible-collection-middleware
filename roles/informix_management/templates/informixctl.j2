@@ -10,7 +10,7 @@
 script_name=$(basename "$0")
 parent_dir="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
-informix_env_files_path="{{ informix_management_install_path }}/etc"
+informix_env_files_dir="{{ informix_management_install_path }}/etc"
 informix_env_file_prefix="informix.env"
 
 # -- General ------------------------------------------------------------------
@@ -42,7 +42,7 @@ discover_services () {
         local env_file_name=$(basename "${env_file_path}" | tr '[:upper:]' '[:lower:]')
         local service_name="${env_file_name##*.}"
         services+=("${service_name}")
-    done < <(find "${informix_env_files_path}" -name "${informix_env_file_prefix}.*" -print0 2>/dev/null | sort -z)
+    done < <(find "${informix_env_files_dir}" -name "${informix_env_file_prefix}.*" -print0 2>/dev/null | sort -z)
 }
 
 unset_informix_env_vars () {
@@ -70,7 +70,7 @@ check_informix_env_vars () {
 }
 
 check_informix_config () {
-    local env_file_path="${informix_env_files_path}/${informix_env_file_prefix}.${service}"
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
 
     if [[ ! -f "${env_file_path}" ]]; then
         exit_with_error "No configuration file at '${env_file_path}'"
@@ -78,7 +78,7 @@ check_informix_config () {
 }
 
 source_informix_config () {
-    local env_file_path="${informix_env_files_path}/${informix_env_file_prefix}.${service}"
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
 
     source "${env_file_path}"
     if [[ $? -ne 0 ]]; then
@@ -151,7 +151,7 @@ main () {
 
     load_logging_functions
 
-    local env_file_path="${informix_env_files_path}/${informix_env_file_prefix}.${service}"
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
 
     check_informix_config
     unset_informix_env_vars
