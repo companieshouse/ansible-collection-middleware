@@ -9,8 +9,7 @@
 # terminate all continuous backup processes on the host *before* this script
 # is called.
 #
-# Specify the service name as an argument to this script when executed (i.e. prod,
-# scud, or ef).
+# Specify the service name as an argument to this script when executed.
 
 # -- Internal variables -------------------------------------------------------
 
@@ -34,10 +33,22 @@ yesterday=$(date --date=yesterday +%d%m%y)
 check_service () {
     local service="${1}"
 
-    if [[ ! "${service}" =~ ^(prod|scud|ef)$ ]]; then
-        echo "Unknown service '${service}'; valid options are: prod scud ef" >&2
+    local valid_services; valid_services=$(IFS='|' ; echo "${services[*]}")
+    local pattern="^(${valid_services})$"
+
+    if [[ ! "${service}" =~ $pattern ]]; then
+        echo "Unknown service '${service}'; valid options are: ${services[*]}" >&2
         exit 1
     fi
+}
+
+discover_services () {
+    services=()
+    while read -r -d $'\0' env_file_path; do
+        local env_file_name=$(basename "${env_file_path}" | tr '[:upper:]' '[:lower:]')
+        local service_name="${env_file_name##*.}"
+        services+=("${service_name}")
+    done < <(find "${informix_env_files_path}" -name "${informix_env_file_prefix}.*" -print0 2>/dev/null | sort -z)
 }
 
 unset_informix_env_vars () {
@@ -208,6 +219,8 @@ main () {
         echo "Usage: ${script_name} <service-name>" >&2
         exit 1
     fi
+
+    discover_services
 
     check_service "${service}"
 
