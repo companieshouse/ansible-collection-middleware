@@ -74,7 +74,7 @@
 
 - name: Install common Informix management scripts
   ansible.builtin.template:
-    src: menu.j2
+    src: "{{ item }}"
     dest: "/home/{{ informix_management_informix_user }}/scripts/{{ item | basename | replace('.j2', '') }}"
     owner: "{{ informix_management_informix_user }}"
     group: "{{ informix_management_informix_group }}"
