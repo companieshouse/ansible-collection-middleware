@@ -1,0 +1,174 @@
+#!/bin/bash
+
+# Control state of Informix DB server.
+#
+# Specify the action "start" or "stop" and service name as arguments to this
+# script when executed.
+
+# -- Internal variables -------------------------------------------------------
+
+script_name=$(basename "$0")
+parent_dir="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
+
+informix_env_files_dir="{{ informix_management_install_path }}/etc"
+informix_env_file_prefix="informix.env"
+
+# -- General ------------------------------------------------------------------
+
+check_action () {
+    local action="${1}"
+
+    if [[ ! "${action}" =~ ^(stop|start)$ ]]; then
+        echo "Unknown action '${action}'; valid options are: stop start" >&2
+        exit 1
+    fi
+}
+
+check_service () {
+    local service="${1}"
+
+    local valid_services; valid_services=$(IFS='|' ; echo "${services[*]}")
+    local pattern="^(${valid_services})$"
+
+    if [[ ! "${service}" =~ $pattern ]]; then
+        echo "Unknown service '${service}'; valid options are: ${services[*]}" >&2
+        exit 1
+    fi
+}
+
+discover_services () {
+    services=()
+    while read -r -d $'\0' env_file_path; do
+        local env_file_name=$(basename "${env_file_path}" | tr '[:upper:]' '[:lower:]')
+        local service_name="${env_file_name##*.}"
+        services+=("${service_name}")
+    done < <(find "${informix_env_files_dir}" -name "${informix_env_file_prefix}.*" -print0 2>/dev/null | sort -z)
+}
+
+unset_informix_env_vars () {
+    for env_var in INFORMIXSERVER INFORMIXDIR ONCONFIG INFORMIXSQLHOSTS; do
+        unset "${env_var}"
+    done
+}
+
+check_informix_env_vars () {
+    local missing_env_vars=()
+
+    for env_var in INFORMIXSERVER INFORMIXDIR ONCONFIG INFORMIXSQLHOSTS; do
+        if [[ -z "${!env_var}" ]]; then
+            missing_env_vars+=("${env_var}")
+        fi
+    done
+
+    if [[ "{{ '${#missing_env_vars[@]}' }}" -gt 0 ]]; then
+        for env_var in "${missing_env_vars[@]}"; do
+            error "Missing environment variable '${env_var}'"
+        done
+
+        exit_with_error "Aborting due to missing environment variables"
+    fi
+}
+
+check_informix_config () {
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
+
+    if [[ ! -f "${env_file_path}" ]]; then
+        exit_with_error "No configuration file at '${env_file_path}'"
+    fi
+}
+
+source_informix_config () {
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
+
+    source "${env_file_path}"
+    if [[ $? -ne 0 ]]; then
+        exit_with_error "Unable to load Informix database configuration from '${env_file_path}'"
+    fi
+}
+
+load_logging_functions () {
+    source "${parent_dir}/logging"
+    if [[ $? -ne 0 ]]; then
+        echo "${script_name}: Unable to source logging functions into environment" >&2
+        send_alert
+        exit 1
+    fi
+
+    initialise_logging
+}
+
+exit_on_error () {
+    local exit_code="${1}"
+    local message="${2}"
+    if [[ "${exit_code}" -ne 0 ]]; then
+        error "${message}"
+        send_alert
+        exit "${exit_code}"
+    fi
+}
+
+exit_with_error () {
+    local message="${1}"
+    local exit_code="255"
+    exit_on_error "${exit_code}" "${message}"
+}
+
+start_informix_server () {
+    info "Starting Informix DB server '${service}'"
+    if oninit -v; then
+        info "Started Informix DB server '${service}'"
+    else
+        error "Unable to start Informix DB server '${service}'"
+        exit 1
+    fi
+}
+
+stop_informix_server () {
+    info "Stopping Informix DB server '${service}'"
+    if onclean -ky; then
+        info "Stopped Informix DB server '${service}'"
+    else
+        error "Unable to stop Informix DB server '${service}'"
+        exit 1
+    fi
+}
+
+# -- Entrypoint ---------------------------------------------------------------
+
+main () {
+    local action="${1}"
+    local service="${2}"
+
+    if [[ -z "${service}" ]]; then
+        echo "Usage: ${script_name} stop|start <service-name>" >&2
+        exit 1
+    fi
+
+    discover_services
+
+    check_action "${action}"
+    check_service "${service}"
+
+    load_logging_functions
+
+    local env_file_path="${informix_env_files_dir}/${informix_env_file_prefix}.${service}"
+
+    check_informix_config
+    unset_informix_env_vars
+    info "Loading configuration file for specified service '${service}' at '${env_file_path}'"
+    source_informix_config
+    check_informix_env_vars
+
+    log_file="{{ informix_management_logs_path }}/${service}/${script_name}.log"
+
+    trace "Service name: '${service}'"
+    trace "Log file: '${log_file}'"
+
+    if [[ "${action}" == "start" ]]; then
+        start_informix_server
+    elif [[ "${action}" == "stop" ]]; then
+        stop_informix_server
+    fi
+}
+
+main "${@}"

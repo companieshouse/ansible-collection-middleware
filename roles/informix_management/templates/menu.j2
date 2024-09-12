@@ -3,7 +3,7 @@
 function menu () {
     local highlight_colour="\033[38;5;202m"
     local reset_color="\033[0m"
-    local informix_env_files_path="{{ informix_management_install_path }}/etc"
+    local informix_env_files_dir="{{ informix_management_install_path }}/etc"
     local informix_env_file_prefix="informix.env"
 
     menu_items=()
@@ -12,10 +12,10 @@ function menu () {
         local service_name="${env_file_name##*.}"
         menu_items+=("${service_name}")
         menu_items+=("Use ${service_name} database environment configuration")
-    done < <(find "${informix_env_files_path}" -name "${informix_env_file_prefix}.*" -print0 2>/dev/null | sort -z)
+    done < <(find "${informix_env_files_dir}" -name "${informix_env_file_prefix}.*" -print0 2>/dev/null | sort -z)
 
     if [[ "{{ '${#menu_items[@]}' }}" -eq 0 ]]; then
-        echo "No Informix configuration files found matching '${informix_env_files_path}/${informix_env_file_prefix}.*'" >&2
+        echo "No Informix configuration files found matching '${informix_env_files_dir}/${informix_env_file_prefix}.*'" >&2
         return 1
     fi
 
@@ -44,7 +44,7 @@ function menu () {
             clear
             return 0
         elif [[ "${exit_code}" -eq "${help_button_selected}" ]]; then
-            dialog --msgbox "Select an option corresponding to the Informix database that should be configured for the current shell environment. \n\nSelect the '${none_item}' option to not set any environment configuration (or unset any existing configuration) in the current shell environment.\n\nEnvironment configuration files are searched for in the path '${informix_env_files_path}' with names matching '${informix_env_file_prefix}.*'." 20 50
+            dialog --msgbox "Select an option corresponding to the Informix database that should be configured for the current shell environment. \n\nSelect the '${none_item}' option to not set any environment configuration (or unset any existing configuration) in the current shell environment.\n\nEnvironment configuration files are searched for in the path '${informix_env_files_dir}' with names matching '${informix_env_file_prefix}.*'." 20 50
         elif [[ "${exit_code}" -ne 0 ]]; then
             echo "Unable to determine menu item selection (${exit_code})" >&2
             return 1
@@ -64,7 +64,7 @@ function menu () {
     fi
 
     if [[ "${menu_selection}" != "${none_item}" ]]; then
-        source "${informix_env_files_path}/${informix_env_file_prefix}.${menu_selection}"
+        source "${informix_env_files_dir}/${informix_env_file_prefix}.${menu_selection}"
     fi
 
     clear
