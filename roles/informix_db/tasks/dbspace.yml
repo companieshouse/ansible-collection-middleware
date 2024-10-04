@@ -35,7 +35,7 @@
         -d {{ dbspace.key }} \
         -p {{ dbspace.value.initial_chunk.path }} \
         -o {{ dbspace.value.initial_chunk.offset_in_kb }} \
-        -s {{ dbspace.value.initial_chunk.size_in_kb }}"
+        -s {{ dbspace.value.initial_chunk.size_in_kb }}
   args:
     executable: /bin/bash
   changed_when: true
