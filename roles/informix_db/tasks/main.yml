@@ -10,6 +10,14 @@
       - informix_db_vault_path is defined and informix_db_vault_path | trim | length > 0
     msg: "Required variable(s) empty or undefined"
 
+- name: Create isql symbolic link
+  ansible.builtin.file:
+    src: "{{ informix_db_install_path }}/bin/dbaccess"
+    dest: "{{ informix_db_install_path }}/bin/isql"
+    owner: "{{ informix_db_service_user }}"
+    group: "{{ informix_db_service_group }}"
+    state: link
+
 - name: Create Informix logs directory
   ansible.builtin.file:
     path: "{{ informix_db_logs_path }}"
