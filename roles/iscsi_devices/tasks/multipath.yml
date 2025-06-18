@@ -12,6 +12,7 @@
     multipath_devices: "{{ iscsi_devices_config | selectattr('multipath') | list }}"
   notify:
     - Restart multipath daemon
+    - Restart iscsid daemon
 
 - name: Flush handlers
   ansible.builtin.meta: flush_handlers
