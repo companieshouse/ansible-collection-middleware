@@ -30,6 +30,13 @@ yesterday=$(date --date=yesterday +%d%m%y)
 
 # -- General ------------------------------------------------------------------
 
+check_user () {
+    if [[ "${EUID}" -eq 0 ]]; then
+        echo "${script_name}: This script should be executed as the 'informix' user not root" >&2
+        exit 1
+    fi
+}
+
 check_service () {
     local service="${1}"
 
@@ -213,6 +220,8 @@ send_alert () {
 # -- Entrypoint ---------------------------------------------------------------
 
 main () {
+    check_user
+
     local service="${1}"
 
     if [[ -z "${service}" ]]; then
