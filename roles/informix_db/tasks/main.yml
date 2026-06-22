@@ -10,6 +10,12 @@
       - informix_db_vault_path is defined and informix_db_vault_path | trim | length > 0
     msg: "Required variable(s) empty or undefined"
 
+- name: Ensure informix_db_server_name is a valid informix_db_config key
+  ansible.builtin.assert:
+    that:
+      - informix_db_server_name in informix_db_config
+    fail_msg: "informix_db_server_name must be one of: {{ informix_db_config.keys() | list }}"
+
 - name: Create isql symbolic link
   ansible.builtin.file:
     src: "{{ informix_db_install_path }}/bin/dbaccess"
