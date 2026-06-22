@@ -17,11 +17,13 @@
 - name: Retrieve alerts config from Hashicorp Vault
   ansible.builtin.set_fact:
     informix_management_alerts_config: "{{ lookup('community.hashi_vault.hashi_vault', informix_management_alerts_vault_path) }}"
+  no_log: true
   when: informix_management_alerts_enabled
 
 - name: Retrieve stats config from Hashicorp Vault
   ansible.builtin.set_fact:
     informix_management_stats_config: "{{ lookup('community.hashi_vault.hashi_vault', informix_management_stats_vault_path) }}"
+  no_log: true
   when: informix_management_stats_enabled
 
 - name: Create scripts directory

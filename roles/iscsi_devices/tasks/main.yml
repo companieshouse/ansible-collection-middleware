@@ -16,6 +16,7 @@
 - name: Retrieve iSCSI device config from Hashicorp Vault
   ansible.builtin.set_fact:
     iscsi_devices_vault_config: "{{ lookup('community.hashi_vault.hashi_vault', iscsi_devices_vault_path) }}"
+  no_log: true
 
 - name: Check iSCSI device WWIDs are present in Hashicorp Vault
   ansible.builtin.assert:
